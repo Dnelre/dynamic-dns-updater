@@ -40,7 +40,6 @@ def update_dns():
 
 if __name__ == "__main__":
     result = get_public_ip()
-    print(result)
-    #while True:
-   #     update_dns()
-    #   time.sleep(CHECK_INTERVAL)
+    while True:
+       update_dns()
+       time.sleep(CHECK_INTERVAL)
