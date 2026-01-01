@@ -1,0 +1,21 @@
+services:
+  dynamic-dns-updater:
+    image: dynamic-dns-updater:latest
+    container_name: dynamic-dns-updater
+    restart: unless-stopped
+    env_file:
+      - .env
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "test -f /tmp/heartbeat && [ $(($(date +%s) - $(cut -d. -f1 /tmp/heartbeat))) -lt 600 ]"
+        ]
+      interval: 1m
+      timeout: 5s
+      retries: 3
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
