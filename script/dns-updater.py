@@ -6,7 +6,6 @@ import logging
 import sys
 import threading
 import requests
-from domeneshop import Client
 
 # ======================
 # Configuration
@@ -18,6 +17,8 @@ SECRET = os.environ.get("DOMENESHOP_SECRET")
 DOMAIN = os.environ.get("DOMAIN")
 SUBDOMAIN = os.environ.get("SUBDOMAIN")
 PUBLIC_IP_RETURNER_URL = os.environ.get("PUBLIC_IP_RETURNER_URL")
+
+API_BASE = "https://api.domeneshop.no/v0"
 
 # ======================
 # Logging
@@ -45,9 +46,11 @@ if missing:
     sys.exit(1)
 
 # ======================
-# Client
+# API session
 # ======================
-client = Client(token=TOKEN, secret=SECRET)
+session = requests.Session()
+session.auth = (TOKEN, SECRET)
+session.headers.update({"Content-Type": "application/json"})
 
 # ======================
 # State
@@ -99,6 +102,21 @@ def get_public_ip() -> str | None:
         return None
 
 
+def get_domain_id() -> int | None:
+    """Look up the numeric domain ID for the configured DOMAIN."""
+    try:
+        response = session.get(f"{API_BASE}/domains", timeout=10)
+        response.raise_for_status()
+        for d in response.json():
+            if d["domain"] == DOMAIN:
+                return d["id"]
+        logger.error(f"Domain '{DOMAIN}' not found in your Domeneshop account")
+        return None
+    except Exception:
+        logger.exception("Failed to fetch domains")
+        return None
+
+
 def update_dns():
     """Ensure DNS A record matches current public IP."""
     global last_known_ip
@@ -111,27 +129,36 @@ def update_dns():
         logger.info("IP unchanged, skipping DNS check")
         return
 
+    domain_id = get_domain_id()
+    if not domain_id:
+        return
+
     try:
-        record = client.get_record(domain=DOMAIN, name=SUBDOMAIN, type="A")
+        response = session.get(f"{API_BASE}/domains/{domain_id}/dns", timeout=10)
+        response.raise_for_status()
+        records = response.json()
+        record = next((r for r in records if r["host"] == SUBDOMAIN and r["type"] == "A"), None)
+
         if record and record["data"] == ip:
             logger.info("DNS record already up to date")
             last_known_ip = ip
             return
 
         if record:
-            client.update_record(
-                domain=DOMAIN,
-                record_id=record["id"],
-                data=ip,
+            r = session.put(
+                f"{API_BASE}/domains/{domain_id}/dns/{record['id']}",
+                json={"data": ip},
+                timeout=10,
             )
+            r.raise_for_status()
             logger.info(f"DNS record updated → {ip}")
         else:
-            client.create_record(
-                domain=DOMAIN,
-                name=SUBDOMAIN,
-                type="A",
-                data=ip,
+            r = session.post(
+                f"{API_BASE}/domains/{domain_id}/dns",
+                json={"host": SUBDOMAIN, "type": "A", "data": ip, "ttl": 300},
+                timeout=10,
             )
+            r.raise_for_status()
             logger.info(f"DNS record created → {ip}")
 
         last_known_ip = ip
