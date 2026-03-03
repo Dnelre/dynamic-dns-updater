@@ -147,7 +147,7 @@ def update_dns():
         if record:
             r = session.put(
                 f"{API_BASE}/domains/{domain_id}/dns/{record['id']}",
-                json={"data": ip},
+                json={"host": SUBDOMAIN, "type": "A", "data": ip, "ttl": 300},
                 timeout=10,
             )
             r.raise_for_status()
